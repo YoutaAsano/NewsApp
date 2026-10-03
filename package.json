@@ -1,0 +1,24 @@
+{
+  "name": "newsapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "資産形成に役立つ経済・世界情勢・テクノロジーのニュースだけを集めるニュースアプリ",
+  "type": "module",
+  "scripts": {
+    "fetch": "node scripts/fetch-news.mjs",
+    "serve": "node scripts/serve.mjs",
+    "dev": "node scripts/fetch-news.mjs && node scripts/serve.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YoutaAsano/NewsApp.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fast-xml-parser": "^4.5.7"
+  }
+}
