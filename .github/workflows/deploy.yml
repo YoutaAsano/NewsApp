@@ -6,7 +6,14 @@ on:
   schedule:
     # 約30分ごとにニュースを収集して再デプロイ（GitHub の混雑状況により数分遅れることがあります）
     - cron: '7,37 * * * *'
+    # 重要ニュースのまとめを生成（日本時間 7:03 と 18:03）
+    - cron: '3 22,9 * * *'
   workflow_dispatch:
+    inputs:
+      digest:
+        description: '重要ニュースのまとめも生成する'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -20,6 +27,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GENERATE_DIGEST: ${{ github.event.schedule == '3 22,9 * * *' || (github.event_name == 'workflow_dispatch' && inputs.digest) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,9 +37,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - uses: actions/configure-pages@v5
+        id: pages
       - name: Fetch news
         run: npm run fetch
-      - uses: actions/configure-pages@v5
+      - name: Install Claude Code
+        if: env.GENERATE_DIGEST == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Digest (carry over past 30 days / generate today's)
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: node scripts/digest.mjs ${{ env.GENERATE_DIGEST == 'true' && '--generate' || '' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public
