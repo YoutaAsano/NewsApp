@@ -42,6 +42,8 @@ const state = {
   query: '',
   shown: PAGE_SIZE,
   lastFetch: 0,
+  digests: [],
+  digestIndex: 0, // 表示中のダイジェスト（0 = 最新）
 };
 
 // ---------- ユーティリティ ----------
@@ -89,7 +91,11 @@ async function load({ manual = false } = {}) {
   const btn = $('#refresh');
   btn.classList.add('spinning');
   try {
-    const [news, markets] = await Promise.allSettled([getJson('data/news.json'), getJson('data/markets.json')]);
+    const [news, markets, digests] = await Promise.allSettled([
+      getJson('data/news.json'),
+      getJson('data/markets.json'),
+      getJson('data/digests.json'),
+    ]);
     if (news.status === 'fulfilled') {
       const changed = state.data?.generatedAt !== news.value.generatedAt;
       state.data = news.value;
@@ -100,6 +106,11 @@ async function load({ manual = false } = {}) {
       toast('更新に失敗しました。オフラインの可能性があります');
     }
     if (markets.status === 'fulfilled') state.markets = markets.value;
+    if (digests.status === 'fulfilled') {
+      const latest = state.digests[0]?.generatedAt;
+      state.digests = digests.value.digests ?? [];
+      if (latest !== state.digests[0]?.generatedAt) state.digestIndex = 0;
+    }
     state.lastFetch = Date.now();
     renderAll();
   } catch (err) {
@@ -160,6 +171,7 @@ function renderCategories() {
   const items = baseItems();
   const counts = items.reduce((m, it) => ((m[it.category] = (m[it.category] ?? 0) + 1), m), {});
   const cats = [
+    ...(state.digests.length ? [{ id: 'digest', label: '重要ニュース', n: state.digests[0].picks.length, star: true }] : []),
     { id: 'all', label: 'すべて', n: items.length },
     ...(state.data?.categories ?? []).map((c) => ({ ...c, n: counts[c.id] ?? 0, color: CAT_COLORS[c.id] })),
     { id: 'saved', label: '保存済み', n: saved.size },
@@ -167,7 +179,7 @@ function renderCategories() {
   $('#categories').innerHTML = cats
     .map(
       (c) => `<li role="presentation"><button class="tab" role="tab" type="button" data-cat="${c.id}" aria-selected="${state.category === c.id}">
-        ${c.color ? `<span class="dot" style="--c:${c.color}"></span>` : ''}${esc(c.label)}<span class="n">${c.n}</span></button></li>`,
+        ${c.star ? '<span class="star" aria-hidden="true">★</span>' : c.color ? `<span class="dot" style="--c:${c.color}"></span>` : ''}${esc(c.label)}<span class="n">${c.n}</span></button></li>`,
     )
     .join('');
 }
@@ -248,7 +260,85 @@ function showEmpty(msg) {
   el.hidden = !msg;
 }
 
+// ---------- 重要ニュース（AI ダイジェスト） ----------
+
+const KIND_LABELS = { opportunity: 'チャンス', risk: 'リスク', watch: '注目' };
+
+function digestDateLabel(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  const wd = '日月火水木金土'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 15 * 3600 * 1000).toISOString().slice(0, 10);
+  const rel = date === today ? '今日 ' : date === yesterday ? '昨日 ' : '';
+  return `${rel}${m}月${d}日(${wd})`;
+}
+
+function renderDigest() {
+  const el = $('#digest-view');
+  const list = state.digests;
+  const d = list[state.digestIndex];
+  if (!d) {
+    el.innerHTML = '';
+    showEmpty('重要ニュースのまとめはまだありません。毎日朝と夕方に自動で作成されます。');
+    return;
+  }
+  const options = list
+    .map((x, i) => `<option value="${i}" ${i === state.digestIndex ? 'selected' : ''}>${esc(digestDateLabel(x.date))}</option>`)
+    .join('');
+  const picks = d.picks
+    .map(
+      (p, i) => `<li class="pick kind-${esc(p.kind)}">
+        <div class="pick-head"><span class="rank">${i + 1}</span>
+          <span class="kind">${KIND_LABELS[p.kind] ?? '注目'}</span>
+          ${p.impact === 'high' ? '<span class="impact">影響大</span>' : ''}</div>
+        <h3>${esc(p.headline)}</h3>
+        <p>${esc(p.summary)}</p>
+        ${p.why ? `<div class="why"><strong>投資の視点</strong>${esc(p.why)}</div>` : ''}
+        ${p.assets?.length ? `<div class="assets">${p.assets.map((a) => `<span>${esc(a)}</span>`).join('')}</div>` : ''}
+        <ul class="refs">${p.articles
+          .map(
+            (a) => `<li><a href="${esc(safeUrl(a.link))}" target="_blank" rel="noopener noreferrer" data-read="${esc(a.id)}">
+              <span class="src">${esc(a.source)}</span>${esc(a.title)}</a></li>`,
+          )
+          .join('')}</ul>
+      </li>`,
+    )
+    .join('');
+  el.innerHTML = `<div class="digest-nav">
+      <button class="icon-btn" type="button" data-dnav="1" aria-label="前の日" ${state.digestIndex >= list.length - 1 ? 'disabled' : ''}>‹</button>
+      <select id="digest-date" aria-label="日付を選択">${options}</select>
+      <button class="icon-btn" type="button" data-dnav="-1" aria-label="次の日" ${state.digestIndex === 0 ? 'disabled' : ''}>›</button>
+    </div>
+    <p class="digest-meta">${esc(fmtDate(d.generatedAt))} 更新 ・ AI（Claude）が選定・要約しています。詳細は元記事でご確認ください。</p>
+    <section class="overview"><h2>概況</h2><p>${esc(d.overview)}</p></section>
+    <ol class="picks">${picks}</ol>`;
+  showEmpty('');
+}
+
+function renderDigestBanner() {
+  const el = $('#digest-banner');
+  const d = state.digests[0];
+  const show = d && state.category === 'all' && !state.query && !state.topic;
+  el.hidden = !show;
+  if (!show) return;
+  const top = d.picks.slice(0, 3).map((p) => `<li>${esc(p.headline)}</li>`).join('');
+  el.innerHTML = `<button type="button" data-cat="digest" class="banner-btn">
+    <span class="banner-title">★ ${esc(digestDateLabel(d.date))}の重要ニュース <span class="n">${d.picks.length}件</span></span>
+    <ol>${top}</ol><span class="banner-more">まとめを読む ›</span></button>`;
+}
+
 function renderList() {
+  const isDigest = state.category === 'digest';
+  $('#digest-view').hidden = !isDigest;
+  $('#list').hidden = isDigest;
+  $('.status-line').hidden = isDigest;
+  $('.mobile-filters').hidden = isDigest;
+  renderDigestBanner();
+  if (isDigest) {
+    $('#more').hidden = true;
+    renderDigest();
+    return;
+  }
   const items = visibleItems();
   const topicLabels = Object.fromEntries((state.data?.topics ?? []).map((t) => [t.id, t.label]));
   const page = items.slice(0, state.shown);
@@ -310,7 +400,10 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
 
-  if (t.dataset.cat) {
+  if (t.dataset.dnav) {
+    state.digestIndex = Math.min(Math.max(state.digestIndex + Number(t.dataset.dnav), 0), state.digests.length - 1);
+    renderList();
+  } else if (t.dataset.cat) {
     state.category = t.dataset.cat;
     resetPaging();
     renderCategories();
@@ -365,6 +458,13 @@ $('#q').addEventListener('input', (e) => {
 });
 
 $('#refresh').addEventListener('click', () => load({ manual: true }));
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'digest-date') {
+    state.digestIndex = Number(e.target.value);
+    renderList();
+  }
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - state.lastFetch > STALE_MS) load();
