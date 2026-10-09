@@ -14,6 +14,7 @@
   --cat-world: #d97706;
   --cat-tech: #7c3aed;
   --cat-crypto: #0d9488;
+  --cat-games: #db2777;
   --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.04);
   --radius: 12px;
   --gutter: 16px;
@@ -37,6 +38,7 @@
     --cat-world: #f5a524;
     --cat-tech: #a78bfa;
     --cat-crypto: #2dd4bf;
+    --cat-games: #f472b6;
     --shadow: none;
     color-scheme: dark;
   }
@@ -58,6 +60,7 @@
   --cat-world: #f5a524;
   --cat-tech: #a78bfa;
   --cat-crypto: #2dd4bf;
+  --cat-games: #f472b6;
   --shadow: none;
   color-scheme: dark;
 }
@@ -595,3 +598,29 @@ svg { fill: currentColor; }
 .pick .refs a { font-size: 13px; color: var(--text-2); text-decoration: none; display: block; }
 .pick .refs a:hover { color: var(--accent); text-decoration: underline; }
 .pick .refs .src { font-weight: 700; margin-right: 6px; color: var(--text-3); }
+
+
+/* ---------- 設定: ジャンル・AI まとめ ---------- */
+
+.genre-toggles { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.genre-toggles label { display: flex; align-items: center; gap: 6px; font-size: 14px; padding: 3px 0; }
+.genre-toggles .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.server-settings .row-text { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.server-settings .row-text .hint { margin: 0 4px 0 0; }
+.pill { font-size: 12px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 10px; }
+.digest-config { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; background: var(--surface-2); }
+.digest-config summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.digest-config summary .hint { margin: 0; }
+.digest-config pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 6px; }
+.btn-row .btn { text-decoration: none; font-size: 14px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

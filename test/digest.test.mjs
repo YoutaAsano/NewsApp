@@ -22,11 +22,20 @@ test('jstDate は日本時間の日付を返す', () => {
 });
 
 test('selectCandidates は直近24時間の記事だけを短い要約付きで返す', () => {
-  const c = selectCandidates([item('a', 1), item('b', 23), item('c', 30)], { now: NOW });
-  assert.deepEqual(c.map((x) => x.id), ['a', 'b']);
+  const c = selectCandidates([item('a', 1), item('g', 2, { category: 'games' }), item('b', 23), item('c', 30)], { now: NOW });
+  assert.deepEqual(c.map((x) => x.id), ['a', 'g', 'b']);
   assert.equal(c[0].summary.length, 120);
   assert.equal('link' in c[0], false);
-  assert.match(buildPrompt(c, [{ label: '日経平均', price: 1, changePercent: 1.5 }]), /日経平均: 1（前日比 \+1.50%）/);
+});
+
+test('buildPrompt は利用者のプロンプトの後に固定ルール・指標・記事一覧を付ける', () => {
+  const c = selectCandidates([item('a', 1)], { now: NOW });
+  const p = buildPrompt('  ゲーム業界の重要ニュースを選んで  ', c, { label: '業界への影響', quotes: [{ label: '日経平均', price: 1, changePercent: 1.5 }] });
+  assert.ok(p.startsWith('ゲーム業界の重要ニュースを選んで\n'));
+  assert.match(p, /「業界への影響」として表示される/);
+  assert.match(p, /日経平均: 1（前日比 \+1.50%）/);
+  assert.match(p, /"id":"a"/);
+  assert.doesNotMatch(buildPrompt('x', c), /マーケット指標/);
 });
 
 test('finalizeDigest は存在しない記事 id を除き、根拠のない項目を捨てる', () => {

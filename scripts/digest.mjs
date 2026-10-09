@@ -1,6 +1,6 @@
-// 「今日の重要ニュース」ダイジェストを管理する。
-//   node scripts/digest.mjs             … 過去のダイジェストを引き継ぐだけ
-//   node scripts/digest.mjs --generate  … さらに Claude Code で今日のダイジェストを生成・更新
+// AI まとめ（ダイジェスト）を管理する。要約の仕方（プロンプト）は settings.yml の digest で設定する。
+//   node scripts/digest.mjs             … 過去のまとめを引き継ぐだけ
+//   node scripts/digest.mjs --generate  … さらに Claude Code で今日のまとめを生成・更新
 //
 // 公開中のサイトから過去30日分の digests.json を取得して引き継ぐ（環境変数 SITE_URL）。
 // 生成には Claude のサブスクリプション（CLAUDE_CODE_OAUTH_TOKEN）または API キーを使う。
@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DIGEST_SCHEMA, buildPrompt, extractStructured, finalizeDigest, mergeDigests, selectCandidates } from './digest-lib.mjs';
+import { loadSettings } from './settings.mjs';
 
 const DATA = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
 const OUT = join(DATA, 'digests.json');
@@ -29,11 +30,11 @@ async function loadPrevious() {
   const url = `${site.replace(/\/$/, '')}/data/digests.json?t=${Date.now()}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (res.status === 404) {
-    console.log('過去のダイジェストはまだありません（初回）');
+    console.log('過去のまとめはまだありません（初回）');
     return [];
   }
   // 一時的な失敗で履歴を消さないよう、404 以外のエラーではデプロイを中止する
-  if (!res.ok) throw new Error(`過去のダイジェストの取得に失敗しました: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`過去のまとめの取得に失敗しました: HTTP ${res.status}`);
   return (await res.json()).digests ?? [];
 }
 
@@ -68,10 +69,10 @@ function runClaude(prompt, cwd) {
   });
 }
 
-async function generate() {
+async function generate({ genres, digest: config }) {
   // ローカルでは `claude` のログイン情報を使うので、未設定チェックは CI のみ
   if (process.env.CI && !process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) {
-    console.log('::warning::CLAUDE_CODE_OAUTH_TOKEN が未設定のため、ダイジェストの生成をスキップしました');
+    console.log('::warning::CLAUDE_CODE_OAUTH_TOKEN が未設定のため、まとめの生成をスキップしました');
     return null;
   }
   const news = await readJson(join(DATA, 'news.json'), null);
@@ -82,28 +83,33 @@ async function generate() {
   if (candidates.length < 5) throw new Error(`直近の記事が少なすぎます（${candidates.length} 件）`);
   console.log(`候補記事 ${candidates.length} 件から重要ニュースを選定中（モデル: ${MODEL}）…`);
 
+  // マーケット指標は経済・暗号資産を収集しているときだけ渡す
+  const withMarket = genres.some((g) => g === 'markets' || g === 'crypto');
+  const prompt = buildPrompt(config.prompt, candidates, { label: config.label, quotes: withMarket ? markets.quotes : [] });
+
   // リポジトリの設定やファイルを読み込ませないよう、空の作業ディレクトリで実行する
   const cwd = await mkdtemp(join(tmpdir(), 'digest-'));
   try {
-    const result = await runClaude(buildPrompt(candidates, markets.quotes), cwd);
+    const result = await runClaude(prompt, cwd);
     const digest = finalizeDigest(extractStructured(result), news.items, { model: MODEL });
-    console.log(`${digest.date} のダイジェストを生成しました（${digest.picks.length} 件）`);
+    console.log(`${digest.date} のまとめを生成しました（${digest.picks.length} 件）`);
     return digest;
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 }
 
+const settings = await loadSettings();
 const previous = await loadPrevious();
 let digest = null;
 if (process.argv.includes('--generate')) {
   try {
-    digest = await generate();
+    digest = await generate(settings);
   } catch (e) {
     // 生成に失敗してもニュース本体の更新は止めない
-    console.log(`::warning::ダイジェストの生成に失敗しました: ${e.message}`);
+    console.log(`::warning::まとめの生成に失敗しました: ${e.message}`);
   }
 }
 const digests = mergeDigests(previous, digest);
-await writeFile(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), digests }));
-console.log(`ダイジェスト ${digests.length} 日分を保存しました`);
+await writeFile(OUT, JSON.stringify({ updatedAt: new Date().toISOString(), label: settings.digest.label, digests }));
+console.log(`まとめ ${digests.length} 日分を保存しました`);

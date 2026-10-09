@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       digest:
-        description: '重要ニュースのまとめも生成する'
+        description: 'AI まとめも生成する（1日2回の定時とは別に Claude の利用枠を使います）'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +28,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # まとめを作るのは朝夕の定時（1日2回）と、手動実行で「AI まとめも生成する」を選んだときだけ
       GENERATE_DIGEST: ${{ github.event.schedule == '3 22,9 * * *' || (github.event_name == 'workflow_dispatch' && inputs.digest) }}
     steps:
       - uses: actions/checkout@v4

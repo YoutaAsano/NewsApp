@@ -2,7 +2,13 @@
 const PAGE_SIZE = 30;
 const STALE_MS = 10 * 60 * 1000; // タブ復帰時にこれより古ければ再取得
 const MAX_READ = 3000;
-const CAT_COLORS = { markets: 'var(--cat-markets)', world: 'var(--cat-world)', tech: 'var(--cat-tech)', crypto: 'var(--cat-crypto)' };
+const CAT_COLORS = {
+  markets: 'var(--cat-markets)',
+  world: 'var(--cat-world)',
+  tech: 'var(--cat-tech)',
+  crypto: 'var(--cat-crypto)',
+  games: 'var(--cat-games)',
+};
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -26,7 +32,7 @@ const store = {
 };
 
 const prefs = Object.assign(
-  { theme: 'system', hideRead: false, showImages: true, lang: 'all', mutedWords: [], mutedSources: [] },
+  { theme: 'system', hideRead: false, showImages: true, lang: 'all', mutedWords: [], mutedSources: [], hiddenGenres: [] },
   store.get('prefs', {}),
 );
 const savePrefs = () => store.set('prefs', prefs);
@@ -42,8 +48,9 @@ const state = {
   query: '',
   shown: PAGE_SIZE,
   lastFetch: 0,
-  digests: [],
-  digestIndex: 0, // 表示中のダイジェスト（0 = 最新）
+  digests: [], // 日付ごとのまとめ（新しい順）
+  digestLabel: '投資の視点', // 各ニュースの解説の見出し（settings.yml の digest.label）
+  digestIndex: 0, // 表示中のまとめ（0 = 最新）
 };
 
 // ---------- ユーティリティ ----------
@@ -109,6 +116,7 @@ async function load({ manual = false } = {}) {
     if (digests.status === 'fulfilled') {
       const latest = state.digests[0]?.generatedAt;
       state.digests = digests.value.digests ?? [];
+      state.digestLabel = digests.value.label || '投資の視点';
       if (latest !== state.digests[0]?.generatedAt) state.digestIndex = 0;
     }
     state.lastFetch = Date.now();
@@ -136,8 +144,13 @@ function baseItems() {
   if (!state.data) return [];
   const isMuted = mutedMatcher();
   const mutedSources = new Set(prefs.mutedSources);
+  const hiddenGenres = new Set(prefs.hiddenGenres);
   return state.data.items.filter(
-    (it) => !mutedSources.has(it.feed) && !isMuted(it.title) && (prefs.lang === 'all' || it.lang === prefs.lang),
+    (it) =>
+      !hiddenGenres.has(it.category) &&
+      !mutedSources.has(it.feed) &&
+      !isMuted(it.title) &&
+      (prefs.lang === 'all' || it.lang === prefs.lang),
   );
 }
 
@@ -173,12 +186,14 @@ function renderCategories() {
   const cats = [
     ...(state.digests.length ? [{ id: 'digest', label: '重要ニュース', n: state.digests[0].picks.length, star: true }] : []),
     { id: 'all', label: 'すべて', n: items.length },
-    ...(state.data?.categories ?? []).map((c) => ({ ...c, n: counts[c.id] ?? 0, color: CAT_COLORS[c.id] })),
+    ...(state.data?.categories ?? [])
+      .filter((c) => !prefs.hiddenGenres.includes(c.id))
+      .map((c) => ({ ...c, n: counts[c.id] ?? 0, color: CAT_COLORS[c.id] })),
     { id: 'saved', label: '保存済み', n: saved.size },
   ];
   $('#categories').innerHTML = cats
     .map(
-      (c) => `<li role="presentation"><button class="tab" role="tab" type="button" data-cat="${c.id}" aria-selected="${state.category === c.id}">
+      (c) => `<li role="presentation"><button class="tab" role="tab" type="button" data-cat="${esc(c.id)}" aria-selected="${state.category === c.id}">
         ${c.star ? '<span class="star" aria-hidden="true">★</span>' : c.color ? `<span class="dot" style="--c:${c.color}"></span>` : ''}${esc(c.label)}<span class="n">${c.n}</span></button></li>`,
     )
     .join('');
@@ -293,7 +308,7 @@ function renderDigest() {
           ${p.impact === 'high' ? '<span class="impact">影響大</span>' : ''}</div>
         <h3>${esc(p.headline)}</h3>
         <p>${esc(p.summary)}</p>
-        ${p.why ? `<div class="why"><strong>投資の視点</strong>${esc(p.why)}</div>` : ''}
+        ${p.why ? `<div class="why"><strong>${esc(state.digestLabel)}</strong>${esc(p.why)}</div>` : ''}
         ${p.assets?.length ? `<div class="assets">${p.assets.map((a) => `<span>${esc(a)}</span>`).join('')}</div>` : ''}
         <ul class="refs">${p.articles
           .map(
@@ -488,7 +503,9 @@ function applyTheme() {
 function renderSources() {
   const sources = state.data?.sources ?? [];
   const muted = new Set(prefs.mutedSources);
-  const groups = (state.data?.categories ?? []).map((c) => ({ ...c, list: sources.filter((s) => s.category === c.id) }));
+  const groups = (state.data?.categories ?? [])
+    .filter((c) => !prefs.hiddenGenres.includes(c.id))
+    .map((c) => ({ ...c, list: sources.filter((s) => s.category === c.id) }));
   $('#sources').innerHTML = groups
     .map(
       (g) => `<h4>${esc(g.label)}</h4>${g.list
@@ -502,11 +519,57 @@ function renderSources() {
     .join('');
 }
 
+function genreLabel(id) {
+  return state.data?.settings?.available?.find((g) => g.id === id)?.label ?? id;
+}
+
+function renderGenreToggles() {
+  const cats = state.data?.categories ?? [];
+  const hidden = new Set(prefs.hiddenGenres);
+  $('#genre-toggles').innerHTML = cats.length
+    ? cats
+        .map(
+          (c) => `<label><input type="checkbox" data-genre="${esc(c.id)}" ${hidden.has(c.id) ? '' : 'checked'}>
+            <span class="dot" style="--c:${CAT_COLORS[c.id] ?? 'var(--text-3)'}"></span>${esc(c.label)}</label>`,
+        )
+        .join('')
+    : '<p class="hint">読み込み中です。</p>';
+}
+
+function renderServerSettings() {
+  const st = state.data?.settings;
+  const el = $('#server-settings');
+  if (!st) {
+    el.innerHTML = '<p class="hint">設定情報はまだありません。次回のニュース収集後に表示されます。</p>';
+    return;
+  }
+  const digest = st.digest
+    ? `<details class="digest-config"><summary><strong>★ 重要ニュースのプロンプト</strong>
+        <span class="hint">解説の見出し: ${esc(st.digest.label)}</span></summary>
+        <pre>${esc(st.digest.prompt)}</pre></details>`
+    : '';
+  const urls = st.urls;
+  el.innerHTML = `<p class="row-text"><span class="hint">収集中のジャンル</span>${st.genres.map((g) => `<span class="pill">${esc(genreLabel(g))}</span>`).join('')}</p>
+    <p class="hint">AI まとめ（タップでプロンプトを表示。収集中のジャンルから1日2回作成）</p>
+    ${digest}
+    ${
+      urls
+        ? `<div class="btn-row">
+            <a class="btn primary" href="${esc(safeUrl(urls.edit))}" target="_blank" rel="noopener noreferrer">設定を編集する（GitHub）</a>
+            <a class="btn" href="${esc(safeUrl(urls.actions))}" target="_blank" rel="noopener noreferrer">更新の状況を見る</a>
+          </div>
+          <p class="hint">GitHub で settings.yml を編集して保存すると、数分後にニュースの収集が新しいジャンルでやり直されます。プロンプトの変更は次の定時（7時・18時ごろ）のまとめから反映されます。</p>`
+        : ''
+    }`;
+}
+
 $('#open-settings').addEventListener('click', () => {
   $('#hide-read').checked = prefs.hideRead;
   $('#show-images').checked = prefs.showImages;
   $('#theme').value = prefs.theme;
   $('#muted-words').value = prefs.mutedWords.join(', ');
+  renderGenreToggles();
+  renderServerSettings();
   renderSources();
   $('#settings').showModal();
 });
@@ -520,6 +583,11 @@ $('#settings').addEventListener('change', (e) => {
     applyTheme();
   } else if (t.id === 'muted-words') {
     prefs.mutedWords = t.value.split(/[,、\n]/).map((w) => w.trim()).filter(Boolean);
+  } else if (t.dataset.genre) {
+    const set = new Set(prefs.hiddenGenres);
+    t.checked ? set.delete(t.dataset.genre) : set.add(t.dataset.genre);
+    prefs.hiddenGenres = [...set];
+    if (prefs.hiddenGenres.includes(state.category)) state.category = 'all';
   } else if (t.dataset.source) {
     const set = new Set(prefs.mutedSources);
     t.checked ? set.delete(t.dataset.source) : set.add(t.dataset.source);

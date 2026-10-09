@@ -1,15 +1,21 @@
 // ニュースの取得元・分類・フィルタ設定。
-// フィードを追加/削除したい場合はこのファイルだけを編集すればよい。
+// 収集するジャンルの選択は settings.yml で行う。ここは選べるジャンルとフィードの一覧。
 
-export const CATEGORIES = [
-  { id: 'markets', label: '経済・マーケット' },
-  { id: 'world', label: '世界情勢' },
-  { id: 'tech', label: 'テクノロジー' },
-  { id: 'crypto', label: '暗号資産' },
+// 選択できるジャンル。exclude は除外キーワード（'common' = 下の EXCLUDE_KEYWORDS を使う）。
+export const GENRES = [
+  { id: 'markets', label: '経済・マーケット', exclude: 'common' },
+  { id: 'world', label: '世界情勢', exclude: 'common' },
+  { id: 'tech', label: 'テクノロジー', exclude: 'common' },
+  { id: 'crypto', label: '暗号資産', exclude: 'common' },
+  { id: 'games', label: 'ゲーム業界', exclude: 'games' },
 ];
 
 const gnews = (topic) =>
   `https://news.google.com/rss/headlines/section/topic/${topic}?hl=ja&gl=JP&ceid=JP:ja`;
+const gsearch = (q, lang = 'ja') =>
+  lang === 'ja'
+    ? `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ja&gl=JP&ceid=JP:ja`
+    : `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
 
 export const FEEDS = [
   // 経済・マーケット
@@ -40,6 +46,15 @@ export const FEEDS = [
   { name: 'CoinPost', url: 'https://coinpost.jp/?feed=rss2', category: 'crypto', lang: 'ja' },
   { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'crypto', lang: 'en' },
   { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss', category: 'crypto', lang: 'en' },
+
+  // ゲーム業界
+  { name: 'Google ニュース ゲーム業界', url: gsearch('ゲーム業界 OR ゲーム会社 OR 任天堂 OR ソニー・インタラクティブエンタテインメント OR カプコン OR スクウェア・エニックス OR バンダイナムコ OR セガ OR コナミ when:2d'), category: 'games', lang: 'ja', aggregator: true },
+  { name: 'AUTOMATON', url: 'https://automaton-media.com/feed/', category: 'games', lang: 'ja' },
+  { name: 'Game*Spark', url: 'https://www.gamespark.jp/rss/index.rdf', category: 'games', lang: 'ja' },
+  { name: '4Gamer.net', url: 'https://www.4gamer.net/rss/index.xml', category: 'games', lang: 'ja' },
+  { name: 'Google News Video Game Industry', url: gsearch('"video game industry" OR "games industry" when:2d', 'en'), category: 'games', lang: 'en', aggregator: true },
+  { name: 'GamesIndustry.biz', url: 'https://www.gamesindustry.biz/feed', category: 'games', lang: 'en' },
+  { name: 'Game Developer', url: 'https://www.gamedeveloper.com/rss.xml', category: 'games', lang: 'en' },
 ];
 
 // 資産形成に関係の薄い記事を除外するキーワード（タイトルに含まれていたら除外）。
@@ -57,6 +72,13 @@ export const EXCLUDE_KEYWORDS = [
   'セール', 'クーポン', 'deal of the day', 'Best deals', 'deals on', 'discount code', 'gift guide',
 ];
 
+// ゲーム業界ジャンル用の除外キーワード（セール・攻略・クイズの答えなど）。
+export const GAMES_EXCLUDE_KEYWORDS = [
+  'セール', 'クーポン', '割引', '攻略', '無料配布', 'プレゼントキャンペーン',
+  'deal of the day', 'Best deals', 'deals on', 'discount code', 'gift guide', 'on sale',
+  'Wordle', 'Connections hints', 'hints and answers', 'answer today', 'guide:', 'walkthrough',
+];
+
 // 記事に付与するトピックタグ。タイトル・要約にキーワードが含まれていたら付与する。
 export const TOPICS = [
   { id: 'rates', label: '金利・中銀', keywords: ['金利', '利上げ', '利下げ', '日銀', '日本銀行', 'FRB', 'FOMC', 'ECB', '中央銀行', '国債', '利回り', 'Fed', 'Federal Reserve', 'interest rate', 'rate cut', 'rate hike', 'Treasury yield', 'Powell', '植田'] },
@@ -71,6 +93,7 @@ export const TOPICS = [
   { id: 'semi', label: '半導体', keywords: ['半導体', 'TSMC', 'NVIDIA', 'エヌビディア', 'ラピダス', 'Rapidus', 'インテル', 'Intel', 'AMD', 'ASML', 'chip', 'chips', 'chipmaker', 'semiconductor'] },
   { id: 'realestate', label: '不動産', keywords: ['不動産', '地価', '住宅', 'マンション', 'REIT', 'real estate', 'housing', 'mortgage'] },
   { id: 'crypto', label: '暗号資産', keywords: ['暗号資産', '仮想通貨', 'ビットコイン', 'イーサリアム', 'ステーブルコイン', 'Bitcoin', 'BTC', 'Ethereum', 'ETH', 'crypto', 'stablecoin', 'blockchain', 'ブロックチェーン'] },
+  { id: 'games', label: 'ゲーム', keywords: ['ゲーム', '任天堂', 'Nintendo', 'Switch 2', 'ニンテンドースイッチ', 'PlayStation', 'プレイステーション', 'PS5', 'Xbox', 'Steam Deck', 'Valve', 'カプコン', 'Capcom', 'スクウェア・エニックス', 'Square Enix', 'バンダイナムコ', 'Bandai Namco', 'セガ', 'Sega', 'コナミ', 'Konami', 'Ubisoft', 'Electronic Arts', 'Take-Two', 'Epic Games', 'Roblox', 'video game', 'gaming', 'esports', 'eスポーツ'] },
 ];
 
 // マーケット指標（Yahoo Finance のチャート API から取得）。
@@ -89,7 +112,7 @@ export const MARKETS = [
 export const LIMITS = {
   perFeed: 40, // 1フィードから取り込む最大件数
   maxAgeHours: 72, // これより古い記事は捨てる
-  maxItems: 800, // news.json に保存する最大件数
+  maxItems: 1000, // news.json に保存する最大件数
   summaryLength: 180, // 要約の最大文字数
   fetchTimeoutMs: 15000,
 };
