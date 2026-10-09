@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       digest:
-        description: '重要ニュースのまとめも生成する'
+        description: 'AI まとめも生成する'
         type: boolean
         default: true
 
@@ -28,7 +28,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      GENERATE_DIGEST: ${{ github.event.schedule == '3 22,9 * * *' || (github.event_name == 'workflow_dispatch' && inputs.digest) }}
+      # まとめを作るのは「朝夕の定時」「手動実行」「settings.yml などの変更が main に入ったとき」
+      GENERATE_DIGEST: ${{ github.event.schedule == '3 22,9 * * *' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.digest) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
