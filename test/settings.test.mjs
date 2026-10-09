@@ -6,34 +6,20 @@ import { parseSettings, SETTINGS_PATH } from '../scripts/settings.mjs';
 test('リポジトリの settings.yml は正しく読み込める', async () => {
   const s = parseSettings(await readFile(SETTINGS_PATH, 'utf8'));
   assert.ok(s.genres.includes('games'));
-  assert.deepEqual(s.digests.map((d) => d.id), ['invest', 'games']);
-  assert.ok(s.digests.every((d) => d.prompt.length > 20));
+  assert.equal(s.digest.label, '投資の視点');
+  assert.ok(s.digest.prompt.length > 50);
 });
 
-test('ラベル省略時は「ポイント」、name 省略時は id を使う', () => {
-  const s = parseSettings('genres: [games]\ndigests:\n  - id: g\n    genres: [games]\n    prompt: hi\n');
-  assert.equal(s.digests[0].label, 'ポイント');
-  assert.equal(s.digests[0].name, 'g');
+test('label 省略時は「ポイント」を使う', () => {
+  const s = parseSettings('genres: [games]\ndigest:\n  prompt: ゲーム業界の重要ニュースを選んで\n');
+  assert.deepEqual(s, { genres: ['games'], digest: { label: 'ポイント', prompt: 'ゲーム業界の重要ニュースを選んで' } });
 });
 
 test('誤りはまとめて日本語で報告する', () => {
-  const bad = `genres: [games, sports]
-digests:
-  - id: x
-    genres: [markets]
-    prompt: ""
-  - id: x
-    genres: [games]
-    prompt: ok
-`;
   assert.throws(
-    () => parseSettings(bad),
-    (e) =>
-      /「sports」は存在しない/.test(e.message) &&
-      /「markets」は上の genres で収集されていません/.test(e.message) &&
-      /prompt を書いてください/.test(e.message) &&
-      /重複/.test(e.message),
+    () => parseSettings('genres: [games, sports]\ndigest:\n  label: x\n'),
+    (e) => /「sports」は存在しない/.test(e.message) && /prompt を書いてください/.test(e.message),
   );
   assert.throws(() => parseSettings('genres: [games\n'), /書式に誤り/);
-  assert.throws(() => parseSettings('digests: []'), /ジャンルを1つ以上/);
+  assert.throws(() => parseSettings('digest:\n  prompt: x\n'), /ジャンルを1つ以上/);
 });

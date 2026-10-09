@@ -81,7 +81,7 @@ await writeFile(
     settings: {
       genres: settings.genres,
       available: GENRES.map(({ id, label }) => ({ id, label })),
-      digests: settings.digests.map(({ id, name, genres, label, prompt }) => ({ id, name, genres, label, prompt })),
+      digest: settings.digest,
       urls: settingsUrls(),
     },
     topics: TOPICS.map(({ id, label }) => ({ id, label })),

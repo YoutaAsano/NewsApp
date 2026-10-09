@@ -48,12 +48,10 @@ const state = {
   query: '',
   shown: PAGE_SIZE,
   lastFetch: 0,
-  digests: [], // [{ id, name, label, genres, entries: [{ date, overview, picks, ... }] }]
-  digestPos: {}, // まとめ id → 表示中のエントリ（0 = 最新）
+  digests: [], // 日付ごとのまとめ（新しい順）
+  digestLabel: '投資の視点', // 各ニュースの解説の見出し（settings.yml の digest.label）
+  digestIndex: 0, // 表示中のまとめ（0 = 最新）
 };
-
-const DIGEST_PREFIX = 'digest:';
-const currentDigestId = () => (state.category.startsWith(DIGEST_PREFIX) ? state.category.slice(DIGEST_PREFIX.length) : null);
 
 // ---------- ユーティリティ ----------
 
@@ -115,7 +113,12 @@ async function load({ manual = false } = {}) {
       toast('更新に失敗しました。オフラインの可能性があります');
     }
     if (markets.status === 'fulfilled') state.markets = markets.value;
-    if (digests.status === 'fulfilled') state.digests = normalizeDigests(digests.value);
+    if (digests.status === 'fulfilled') {
+      const latest = state.digests[0]?.generatedAt;
+      state.digests = digests.value.digests ?? [];
+      state.digestLabel = digests.value.label || '投資の視点';
+      if (latest !== state.digests[0]?.generatedAt) state.digestIndex = 0;
+    }
     state.lastFetch = Date.now();
     renderAll();
   } catch (err) {
@@ -125,19 +128,6 @@ async function load({ manual = false } = {}) {
   } finally {
     btn.classList.remove('spinning');
   }
-}
-
-// 旧形式（まとめが1種類だった頃）の digests.json にも対応する
-function normalizeDigests(json) {
-  const list = json?.digests ?? [];
-  const digests = list.length && list[0]?.date
-    ? [{ id: 'invest', name: '重要ニュース', label: '投資の視点', genres: [], entries: list }]
-    : list.filter((d) => d?.id);
-  for (const d of digests) {
-    const latest = state.digests.find((x) => x.id === d.id)?.entries[0]?.generatedAt;
-    if (latest !== d.entries[0]?.generatedAt) state.digestPos[d.id] = 0;
-  }
-  return digests;
 }
 
 // ---------- フィルタリング ----------
@@ -194,7 +184,7 @@ function renderCategories() {
   const items = baseItems();
   const counts = items.reduce((m, it) => ((m[it.category] = (m[it.category] ?? 0) + 1), m), {});
   const cats = [
-    ...state.digests.map((d) => ({ id: DIGEST_PREFIX + d.id, label: d.name, n: d.entries[0]?.picks.length ?? 0, star: true })),
+    ...(state.digests.length ? [{ id: 'digest', label: '重要ニュース', n: state.digests[0].picks.length, star: true }] : []),
     { id: 'all', label: 'すべて', n: items.length },
     ...(state.data?.categories ?? [])
       .filter((c) => !prefs.hiddenGenres.includes(c.id))
@@ -298,19 +288,17 @@ function digestDateLabel(date) {
   return `${rel}${m}月${d}日(${wd})`;
 }
 
-function renderDigest(id) {
+function renderDigest() {
   const el = $('#digest-view');
-  const digest = state.digests.find((d) => d.id === id);
-  const list = digest?.entries ?? [];
-  const pos = Math.min(state.digestPos[id] ?? 0, Math.max(list.length - 1, 0));
-  const d = list[pos];
+  const list = state.digests;
+  const d = list[state.digestIndex];
   if (!d) {
     el.innerHTML = '';
-    showEmpty(`「${digest?.name ?? 'まとめ'}」はまだ作成されていません。毎日朝と夕方に自動で作成されます。`);
+    showEmpty('重要ニュースのまとめはまだありません。毎日朝と夕方に自動で作成されます。');
     return;
   }
   const options = list
-    .map((x, i) => `<option value="${i}" ${i === pos ? 'selected' : ''}>${esc(digestDateLabel(x.date))}</option>`)
+    .map((x, i) => `<option value="${i}" ${i === state.digestIndex ? 'selected' : ''}>${esc(digestDateLabel(x.date))}</option>`)
     .join('');
   const picks = d.picks
     .map(
@@ -320,7 +308,7 @@ function renderDigest(id) {
           ${p.impact === 'high' ? '<span class="impact">影響大</span>' : ''}</div>
         <h3>${esc(p.headline)}</h3>
         <p>${esc(p.summary)}</p>
-        ${p.why ? `<div class="why"><strong>${esc(digest.label || 'ポイント')}</strong>${esc(p.why)}</div>` : ''}
+        ${p.why ? `<div class="why"><strong>${esc(state.digestLabel)}</strong>${esc(p.why)}</div>` : ''}
         ${p.assets?.length ? `<div class="assets">${p.assets.map((a) => `<span>${esc(a)}</span>`).join('')}</div>` : ''}
         <ul class="refs">${p.articles
           .map(
@@ -331,11 +319,10 @@ function renderDigest(id) {
       </li>`,
     )
     .join('');
-  el.innerHTML = `<h2 class="digest-title"><span class="star" aria-hidden="true">★</span>${esc(digest.name)}</h2>
-    <div class="digest-nav">
-      <button class="icon-btn" type="button" data-dnav="1" data-did="${esc(id)}" aria-label="前の日" ${pos >= list.length - 1 ? 'disabled' : ''}>‹</button>
-      <select class="digest-date" data-did="${esc(id)}" aria-label="日付を選択">${options}</select>
-      <button class="icon-btn" type="button" data-dnav="-1" data-did="${esc(id)}" aria-label="次の日" ${pos === 0 ? 'disabled' : ''}>›</button>
+  el.innerHTML = `<div class="digest-nav">
+      <button class="icon-btn" type="button" data-dnav="1" aria-label="前の日" ${state.digestIndex >= list.length - 1 ? 'disabled' : ''}>‹</button>
+      <select id="digest-date" aria-label="日付を選択">${options}</select>
+      <button class="icon-btn" type="button" data-dnav="-1" aria-label="次の日" ${state.digestIndex === 0 ? 'disabled' : ''}>›</button>
     </div>
     <p class="digest-meta">${esc(fmtDate(d.generatedAt))} 更新 ・ AI（Claude）が選定・要約しています。詳細は元記事でご確認ください。</p>
     <section class="overview"><h2>概況</h2><p>${esc(d.overview)}</p></section>
@@ -345,24 +332,18 @@ function renderDigest(id) {
 
 function renderDigestBanner() {
   const el = $('#digest-banner');
-  const ready = state.digests.filter((d) => d.entries[0]);
-  const show = ready.length > 0 && state.category === 'all' && !state.query && !state.topic;
+  const d = state.digests[0];
+  const show = d && state.category === 'all' && !state.query && !state.topic;
   el.hidden = !show;
   if (!show) return;
-  el.innerHTML = ready
-    .map((dg) => {
-      const d = dg.entries[0];
-      const top = d.picks.slice(0, ready.length > 1 ? 2 : 3).map((p) => `<li>${esc(p.headline)}</li>`).join('');
-      return `<button type="button" data-cat="${esc(DIGEST_PREFIX + dg.id)}" class="banner-btn">
-        <span class="banner-title">★ ${esc(dg.name)} <span class="n">${esc(digestDateLabel(d.date))} ・ ${d.picks.length}件</span></span>
-        <ol>${top}</ol><span class="banner-more">まとめを読む ›</span></button>`;
-    })
-    .join('');
+  const top = d.picks.slice(0, 3).map((p) => `<li>${esc(p.headline)}</li>`).join('');
+  el.innerHTML = `<button type="button" data-cat="digest" class="banner-btn">
+    <span class="banner-title">★ ${esc(digestDateLabel(d.date))}の重要ニュース <span class="n">${d.picks.length}件</span></span>
+    <ol>${top}</ol><span class="banner-more">まとめを読む ›</span></button>`;
 }
 
 function renderList() {
-  const digestId = currentDigestId();
-  const isDigest = digestId != null;
+  const isDigest = state.category === 'digest';
   $('#digest-view').hidden = !isDigest;
   $('#list').hidden = isDigest;
   $('.status-line').hidden = isDigest;
@@ -370,7 +351,7 @@ function renderList() {
   renderDigestBanner();
   if (isDigest) {
     $('#more').hidden = true;
-    renderDigest(digestId);
+    renderDigest();
     return;
   }
   const items = visibleItems();
@@ -435,9 +416,7 @@ document.addEventListener('click', (e) => {
   if (!t) return;
 
   if (t.dataset.dnav) {
-    const id = t.dataset.did;
-    const max = (state.digests.find((d) => d.id === id)?.entries.length ?? 1) - 1;
-    state.digestPos[id] = Math.min(Math.max((state.digestPos[id] ?? 0) + Number(t.dataset.dnav), 0), max);
+    state.digestIndex = Math.min(Math.max(state.digestIndex + Number(t.dataset.dnav), 0), state.digests.length - 1);
     renderList();
   } else if (t.dataset.cat) {
     state.category = t.dataset.cat;
@@ -496,8 +475,8 @@ $('#q').addEventListener('input', (e) => {
 $('#refresh').addEventListener('click', () => load({ manual: true }));
 
 document.addEventListener('change', (e) => {
-  if (e.target.classList.contains('digest-date')) {
-    state.digestPos[e.target.dataset.did] = Number(e.target.value);
+  if (e.target.id === 'digest-date') {
+    state.digestIndex = Number(e.target.value);
     renderList();
   }
 });
@@ -564,24 +543,22 @@ function renderServerSettings() {
     el.innerHTML = '<p class="hint">設定情報はまだありません。次回のニュース収集後に表示されます。</p>';
     return;
   }
-  const digests = st.digests
-    .map(
-      (d) => `<details class="digest-config"><summary><strong>★ ${esc(d.name)}</strong>
-        <span class="hint">対象: ${d.genres.map((g) => esc(genreLabel(g))).join('・')}</span></summary>
-        <pre>${esc(d.prompt)}</pre></details>`,
-    )
-    .join('');
+  const digest = st.digest
+    ? `<details class="digest-config"><summary><strong>★ 重要ニュースのプロンプト</strong>
+        <span class="hint">解説の見出し: ${esc(st.digest.label)}</span></summary>
+        <pre>${esc(st.digest.prompt)}</pre></details>`
+    : '';
   const urls = st.urls;
   el.innerHTML = `<p class="row-text"><span class="hint">収集中のジャンル</span>${st.genres.map((g) => `<span class="pill">${esc(genreLabel(g))}</span>`).join('')}</p>
-    <p class="hint">AI まとめ（タップでプロンプトを表示）</p>
-    ${digests || '<p class="hint">まとめは設定されていません。</p>'}
+    <p class="hint">AI まとめ（タップでプロンプトを表示。収集中のジャンルから1日2回作成）</p>
+    ${digest}
     ${
       urls
         ? `<div class="btn-row">
             <a class="btn primary" href="${esc(safeUrl(urls.edit))}" target="_blank" rel="noopener noreferrer">設定を編集する（GitHub）</a>
             <a class="btn" href="${esc(safeUrl(urls.actions))}" target="_blank" rel="noopener noreferrer">更新の状況を見る</a>
           </div>
-          <p class="hint">GitHub で settings.yml を編集して保存すると、数分後にニュースの収集と AI まとめが新しい設定でやり直されます。</p>`
+          <p class="hint">GitHub で settings.yml を編集して保存すると、数分後にニュースの収集が新しいジャンルでやり直されます。プロンプトの変更は次の定時（7時・18時ごろ）のまとめから反映されます。</p>`
         : ''
     }`;
 }

@@ -1,15 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildDigestsFile,
-  buildPrompt,
-  extractStructured,
-  finalizeDigest,
-  jstDate,
-  mergeEntries,
-  previousEntries,
-  selectCandidates,
-} from '../scripts/digest-lib.mjs';
+import { buildPrompt, extractStructured, finalizeDigest, jstDate, mergeDigests, selectCandidates } from '../scripts/digest-lib.mjs';
 
 const NOW = Date.parse('2026-10-03T09:00:00Z'); // JST 18:00
 const item = (id, hoursAgo, extra = {}) => ({
@@ -30,13 +21,11 @@ test('jstDate は日本時間の日付を返す', () => {
   assert.equal(jstDate(Date.parse('2026-10-02T14:59:00Z')), '2026-10-02');
 });
 
-test('selectCandidates は対象ジャンルの直近24時間の記事だけを短い要約付きで返す', () => {
-  const items = [item('a', 1), item('b', 23), item('c', 30), item('g', 2, { category: 'games' })];
-  const c = selectCandidates(items, { now: NOW, genres: ['markets'] });
-  assert.deepEqual(c.map((x) => x.id), ['a', 'b']);
+test('selectCandidates は直近24時間の記事だけを短い要約付きで返す', () => {
+  const c = selectCandidates([item('a', 1), item('g', 2, { category: 'games' }), item('b', 23), item('c', 30)], { now: NOW });
+  assert.deepEqual(c.map((x) => x.id), ['a', 'g', 'b']);
   assert.equal(c[0].summary.length, 120);
   assert.equal('link' in c[0], false);
-  assert.deepEqual(selectCandidates(items, { now: NOW, genres: ['games'] }).map((x) => x.id), ['g']);
 });
 
 test('buildPrompt は利用者のプロンプトの後に固定ルール・指標・記事一覧を付ける', () => {
@@ -72,42 +61,18 @@ test('finalizeDigest は存在しない記事 id を除き、根拠のない項�
   assert.throws(() => finalizeDigest({ overview: 'x', picks: [] }, items));
 });
 
-test('mergeEntries は同じ日付を置き換え、30日分に制限する', () => {
+test('mergeDigests は同じ日付を置き換え、30日分に制限する', () => {
   const old = Array.from({ length: 30 }, (_, i) => ({ date: `2026-09-${String(30 - i).padStart(2, '0')}`, v: 1 }));
   old.unshift({ date: '2026-10-03', v: 1 });
-  const merged = mergeEntries(old, { date: '2026-10-03', v: 2 });
+  const merged = mergeDigests(old, { date: '2026-10-03', v: 2 });
   assert.equal(merged.length, 30);
   assert.equal(merged[0].v, 2);
   assert.equal(merged.at(-1).date, '2026-09-02');
-  assert.equal(mergeEntries(old.slice(0, 3), null).length, 3);
+  assert.equal(mergeDigests(old.slice(0, 3), null).length, 3);
 });
 
 test('extractStructured は structured_output を優先し、テキストの JSON にも対応する', () => {
   assert.deepEqual(extractStructured({ structured_output: { a: 1 }, result: '' }), { a: 1 });
   assert.deepEqual(extractStructured({ result: 'here: {"a":2} done' }), { a: 2 });
   assert.throws(() => extractStructured({ is_error: true, result: 'auth' }), /auth/);
-});
-
-test('previousEntries は新旧どちらの digests.json も読める', () => {
-  assert.deepEqual(previousEntries({ digests: [{ date: '2026-10-03' }] }), { invest: [{ date: '2026-10-03' }] });
-  assert.deepEqual(previousEntries({ digests: [{ id: 'games', entries: [{ date: 'd' }] }] }), { games: [{ date: 'd' }] });
-  assert.deepEqual(previousEntries(null), {});
-});
-
-test('buildDigestsFile は設定の順に並べ、設定から消えたまとめは捨てる', () => {
-  const configs = [
-    { id: 'games', name: 'ゲーム業界', label: 'L', genres: ['games'], prompt: 'p' },
-    { id: 'invest', name: '重要ニュース', label: 'L2', genres: ['markets'], prompt: 'p' },
-  ];
-  const file = buildDigestsFile(
-    configs,
-    { invest: [{ date: '2026-10-02' }], removed: [{ date: '2026-10-02' }] },
-    { games: { date: '2026-10-03' } },
-    NOW,
-  );
-  assert.deepEqual(file.digests.map((d) => [d.id, d.entries.map((e) => e.date)]), [
-    ['games', ['2026-10-03']],
-    ['invest', ['2026-10-02']],
-  ]);
-  assert.equal('prompt' in file.digests[0], false);
 });

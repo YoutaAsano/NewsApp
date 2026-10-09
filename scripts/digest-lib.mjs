@@ -1,5 +1,5 @@
 // AI まとめ（ダイジェスト）生成用の純粋関数群（テスト対象）。
-// まとめの種類・対象ジャンル・プロンプトは settings.yml の digests で設定する。
+// 要約の仕方（プロンプト）は settings.yml の digest で設定する。
 
 export const DIGEST_KEEP_DAYS = 30;
 const JST_OFFSET_MS = 9 * 3600 * 1000;
@@ -7,11 +7,11 @@ const JST_OFFSET_MS = 9 * 3600 * 1000;
 // 日本時間の日付文字列（YYYY-MM-DD）
 export const jstDate = (ms) => new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 10);
 
-// Claude に渡す候補記事（対象ジャンル・直近24時間・新しい順）を選ぶ
-export function selectCandidates(items, { genres = null, now = Date.now(), hours = 24, max = 250 } = {}) {
+// Claude に渡す候補記事（直近24時間・新しい順）を選ぶ
+export function selectCandidates(items, { now = Date.now(), hours = 24, max = 250 } = {}) {
   const since = now - hours * 3600 * 1000;
   return items
-    .filter((it) => (!genres || genres.includes(it.category)) && Date.parse(it.published) >= since)
+    .filter((it) => Date.parse(it.published) >= since)
     .slice(0, max)
     .map((it) => ({
       id: it.id,
@@ -106,32 +106,10 @@ export function finalizeDigest(raw, items, { now = Date.now(), model = '' } = {}
 }
 
 // 同じ日付は新しいもので置き換え、新しい順に最大30日分残す
-export function mergeEntries(existing, digest, keepDays = DIGEST_KEEP_DAYS) {
+export function mergeDigests(existing, digest, keepDays = DIGEST_KEEP_DAYS) {
   const byDate = new Map((existing ?? []).filter((d) => d?.date).map((d) => [d.date, d]));
   if (digest) byDate.set(digest.date, digest);
   return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, keepDays);
-}
-
-// 公開中の digests.json を「まとめ id → 過去のエントリ」に変換する。
-// 旧形式（まとめが1種類だった頃の { digests: [{ date, ... }] }）は id "invest" として引き継ぐ。
-export function previousEntries(json) {
-  const list = json?.digests ?? [];
-  if (list.length && list[0]?.date) return { invest: list };
-  return Object.fromEntries(list.filter((d) => d?.id).map((d) => [d.id, d.entries ?? []]));
-}
-
-// settings.yml の digests の並び順で、新しいエントリを反映した digests.json の中身を作る
-export function buildDigestsFile(configs, previous, generated, now = Date.now()) {
-  return {
-    updatedAt: new Date(now).toISOString(),
-    digests: configs.map((c) => ({
-      id: c.id,
-      name: c.name,
-      label: c.label,
-      genres: c.genres,
-      entries: mergeEntries(previous[c.id], generated[c.id] ?? null),
-    })),
-  };
 }
 
 // CLI の --output-format json の結果から構造化出力を取り出す

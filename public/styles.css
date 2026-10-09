@@ -599,10 +599,6 @@ svg { fill: currentColor; }
 .pick .refs a:hover { color: var(--accent); text-decoration: underline; }
 .pick .refs .src { font-weight: 700; margin-right: 6px; color: var(--text-3); }
 
-.digest-banner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.digest-banner .banner-btn ol { margin-bottom: 2px; }
-.digest-title { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 18px; }
-.digest-title .star { color: var(--star); }
 
 /* ---------- 設定: ジャンル・AI まとめ ---------- */
 
